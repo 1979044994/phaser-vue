@@ -12,16 +12,32 @@ export class PhaserChessGame {
   private pathHistory: Array<{ x: number; y: number }> = [];
   private background!: Phaser.GameObjects.Image;
   private isMoving = false;
-  private playArea: { y: number; height: number };
+  private boardOffsetY = 300; // 增加垂直偏移量（根据实际效果调整）
   private currentProgress: number = 0;
   private totalProgress: number = 10;
   private ui!: GameUI;
 
+  /**
+   * 游戏类的构造函数
+   *
+   * @param scene - Phaser 场景对象
+   * @param config - 游戏配置对象
+   *
+   * 初始化游戏类的实例，包括设置游戏区域、UI、背景和棋盘。
+   *
+   * @remarks
+   * - `playArea` 设置游戏区域的 y 坐标和高度。
+   * - `ui` 初始化游戏的 UI 并设置其深度。
+   * - `scene` 保存传入的场景对象。
+   * - `currentPos` 设置当前棋盘位置。
+   * - `cellSize` 设置棋盘单元格的大小。
+   * - `setBackground` 设置游戏背景。
+   * - `scene.scale.on('resize')` 监听窗口大小变化事件并调整背景大小。
+   * - `board` 初始化棋盘。
+   */
   constructor(scene: Phaser.Scene, config: GameConfig) {
-    this.playArea = {
-      y: 220,
-      height: scene.scale.height - 320
-    };
+    // 移除 playArea 定义
+    this.setupBoardPosition(scene.scale.height); // 新增初始化方法
     this.ui = new GameUI(scene);
     this.ui.uiContainer.setDepth(1000);
 
@@ -29,10 +45,10 @@ export class PhaserChessGame {
     this.currentPos = { x: 0, y: config.boardSize - 1 };
     this.cellSize = { width: 69, height: 75 };
     this.setBackground();
-
     scene.scale.on('resize', (gameSize: any) => {
       this.background.setDisplaySize(gameSize.width, gameSize.height);
     });
+
     this.board = this.initBoard(config);
   }
 
@@ -70,6 +86,13 @@ export class PhaserChessGame {
     return board;
   }
 
+  // 新增初始化方法
+  private setupBoardPosition(screenHeight: number) {
+    const sloganHeight = 200; // 与slogan实际高度一致
+    this.boardOffsetY = sloganHeight + 100; // slogan下方留出100px空间
+  }
+
+
   private isCellValid(x: number, y: number, boardSize: number): boolean {
     const outerRing = x === 0 || y === 0 || x === boardSize - 1 || y === boardSize - 1;
     const innerRing = x >= 5 && x <= 13 && (y === 5 || y === 13) || y >= 5 && y <= 13 && (x === 5 || x === 13);
@@ -105,15 +128,18 @@ export class PhaserChessGame {
 
     this.setupCamera();
   }
-  // public createPiece(): void {
-  //   const startPos = this.gridToPosition(this.currentPos.x, this.currentPos.y);
-  //   // 调整 y 坐标，使棋子位置靠上
-  //   const offsetY = this.cellSize.height * 0.2; // 可以根据需要调整这个偏移量
-  //   this.piece = this.scene.add.sprite(startPos.x, startPos.y - offsetY, 'piece');
-  //   this.piece.setDisplaySize(this.cellSize.width * 0.8, this.cellSize.height * 0.8);
-  //   this.setupCamera();
-  // }
 
+  /**
+   * 设置场景的主摄像机。
+   *
+   * - 将摄像机中心对准当前棋子位置。
+   * - 设置摄像机缩放级别为1.2。
+   * - 使摄像机平滑跟随棋子。
+   * - 设置摄像机跟随的偏移量。
+   *
+   * @private
+   * @method setupCamera
+   */
   private setupCamera(): void {
     const camera = this.scene.cameras.main;
     const startPos = this.gridToPosition(this.currentPos.x, this.currentPos.y);
@@ -121,6 +147,13 @@ export class PhaserChessGame {
     camera.setZoom(1.2);
     camera.startFollow(this.piece, true, 0.1, 0.1);
     camera.setFollowOffset(-10, 10);
+    // 调整相机边界（关键）
+    // camera.setBounds(
+    //   0,
+    //   this.boardOffsetY - 50, // 上边界留出过渡空间
+    //   this.board.length * this.cellSize.width,
+    //   this.scene.scale.height - this.boardOffsetY + 100 // 动态计算高度
+    // );
     // // 创建顶部遮罩
     // const mask = this.scene.make.graphics()
     //   .fillRect(0, 0, this.scene.scale.width, this.playArea.y)
@@ -128,6 +161,7 @@ export class PhaserChessGame {
 
     // this.scene.cameras.main.setMask(mask);
   }
+
 
   public async movePiece(steps: number): Promise<void> {
     if (this.isMoving) return;
@@ -353,11 +387,47 @@ export class PhaserChessGame {
   }
 
   // 修改棋盘坐标转换
+  /**
+   * 将网格坐标转换为实际位置坐标。
+   *
+   * @param x - 网格的X坐标。
+   * @param y - 网格的Y坐标。
+   * @returns 返回一个包含实际位置坐标的Phaser.Math.Vector2对象。
+   */
   private gridToPosition(x: number, y: number): Phaser.Math.Vector2 {
     return new Phaser.Math.Vector2(
       x * this.cellSize.width + this.cellSize.width / 2,
-      this.playArea.y + y * this.cellSize.height + this.cellSize.height / 2
+      this.boardOffsetY + y * this.cellSize.height // 移除多余偏移
     );
   }
+
+  // game.ts 添加渐变遮罩
+  private createGradientMask() {
+    const gradient = this.scene.textures.createCanvas('mask', 256, 256);
+    if (!gradient) {
+      throw new Error('Failed to create gradient texture');
+    }
+    const ctx = gradient.getContext();
+
+    // 创建垂直渐变
+    const grd = ctx.createLinearGradient(0, 0, 0, 256);
+    grd.addColorStop(0, 'rgba(0,0,0,0)');
+    grd.addColorStop(0.2, 'rgba(0,0,0,1)');
+
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, 256, 256);
+    gradient.refresh();
+
+    // 应用渐变遮罩
+    const mask = this.scene.make.sprite({
+      key: 'mask',
+      x: 0,
+      y: this.boardOffsetY - 50,
+      scale: { x: this.scene.scale.width / 256, y: 1 }
+    }, true).createGeometryMask();
+
+    this.scene.cameras.main.setMask(mask);
+  }
+
 
 }
